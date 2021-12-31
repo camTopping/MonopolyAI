@@ -1,21 +1,12 @@
-from Monopoly import engine
+from Monopoly import engine, helpers
 import numpy as np
-import random
-
 
 def run_game(number_of_players=4):
     player_id = 0
     game_state = engine.GameState()
 
     # Player Metrics
-    player_money = np.ndarray(shape=(number_of_players, 1), dtype=list)
-
-    #plotnine for graphing
-
-    # numpy.append()
-    # matrix
-    # columns are players
-    # can append to matrices
+    plot_player_money = np.ones((1, number_of_players)) * game_state.player_money
 
     # Game ends when 3rd player is declared bankrupt
     # While loop deals with one full round of play from each player
@@ -36,6 +27,9 @@ def run_game(number_of_players=4):
                 if current_player_position < previous_player_position:
                     game_state.player_money[player] += 200
 
+                    # Plot Information
+                    plot_player_money = np.vstack([plot_player_money, game_state.player_money])
+
                 # Determine Where Player Landed
                 current_tile = engine.map_position(current_player_position)
                 if type(current_tile) == tuple:
@@ -46,15 +40,24 @@ def run_game(number_of_players=4):
                         if (cost := engine.cost_property(current_tile)) <= game_state.player_money[player]:
                             game_state.owned_property[current_tile[0]][current_tile[1] - 1] = player + 1  # indexed by player id
                             game_state.player_money[player] -= cost
+
+                            # Plot Information
+                            plot_player_money = np.vstack([plot_player_money, game_state.player_money])
+
                     else:
                         # If owned, pay up to relevant player.
+                        print(f"Player {player + 1} is paying player {property_ownership} for landing on {engine.map_position(current_player_position)}")
                         game_state.player_money[player] -= engine.rent(current_tile, 5, dice_roll)
                         game_state.player_money[property_ownership - 1] += engine.rent(current_tile, 5, dice_roll)
+
+                        # Plot Information
+                        plot_player_money = np.vstack([plot_player_money, game_state.player_money])
+
                 elif current_tile == "Go To Jail":
                     game_state.board[current_player_position, player] = 0
                     game_state.board[10, player] = 1
+
                 elif current_tile == "Community":
-                    print("Community!")
                     # Check if deck needs to be reshuffled.
                     if len(game_state.used_community_cards) == 0:
                         game_state.community_cards = game_state.used_community_cards
@@ -77,14 +80,12 @@ def run_game(number_of_players=4):
                 if sum(game_state.bankrupt_players) == 1:
                     break
 
-        # game_state.bankrupt_players[player_id] = 1
-        # print(game_state.bankrupt_players)
-        # player_id += 1
-
     print(game_state.bankrupt_players)
     print(game_state.player_money)
     print(game_state.owned_property)
 
+    # Plot Results\
+    print(helpers.plot_metrics(plot_player_money, number_of_players))
 
 def main():
     # Use a breakpoint in the code line below to debug your script.
