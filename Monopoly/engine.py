@@ -1,15 +1,20 @@
 import numpy as np
 import random
-import matplotlib.pyplot as plt
-
+import pygame as p
+import os
 
 # This script handles the creation and tracking of the current game state across it's numerous players.
+HEIGHT = 512
+WIDTH = 1000
 
+PLAYER_SIZE = 20
+PLAYER_COLOR = [(200, 0, 0), (0, 200, 0), (0, 0, 200), (100, 0, 100)]
+BOARD_SIZE = 512 #px
 
 # Initiate Game Board
 # This handle the creation of the board - ideally, this can also be used to save/load game files
 # Takes a list of values which represents each player's position on the board
-def init_game_board(player_positions, number_of_players = 4):
+def init_game_board(player_positions, number_of_players=4):
     squares = np.zeros((40, number_of_players), dtype="int")
     for i in range(len(player_positions)):
         squares[player_positions[i], i] = 1
@@ -208,6 +213,7 @@ def rent(property_tuple, number_of_houses, dice_roll):
     else:
         return 0
 
+
 # Roll Dice
 def roll_dice():
     first_die = random.randint(1, 6)
@@ -217,13 +223,69 @@ def roll_dice():
 
     return results
 
+
+# Set Up Pygame Classes and Functions
+class Background(p.sprite.Sprite):
+    def __init__(self, image_file, location):
+        p.sprite.Sprite.__init__(self)  # call Sprite initializer
+        self.image = p.image.load(image_file)
+        self.rect = self.image.get_rect()
+        self.rect.left, self.rect.top = location
+
+
+def draw_gameboard(image_file):
+    image = Background(image_file, [0, 0])
+    return image
+
+def player_pos_px(board_position):
+    # board_position references the tiles from 0 to 39
+
+    if board_position == 0:
+        player_pos_y = 475
+        player_pos_x = 475
+    elif board_position == 10:
+        player_pos_y = 475
+        player_pos_x = 45
+    elif board_position == 20:
+        player_pos_y = 45
+        player_pos_x = 45
+    elif board_position < 10:
+        player_pos_y = 475
+        player_pos_x = (11 - board_position) * 40.2
+    elif board_position < 20:
+        player_pos_y = (21 - board_position) * 40.2
+        player_pos_x = 45
+    elif board_position < 30:
+        player_pos_y = 45
+        player_pos_x = (board_position - 19) * 40.2
+    elif board_position < 40:
+        player_pos_y = (board_position - 29) * 40.2
+        player_pos_x = 475
+
+    position_tuple = (player_pos_x, player_pos_y)
+
+    return position_tuple
+
+
 # Define Game State
 class GameState:
-    def __init__(self, number_of_players=4):
+    def __init__(self, number_of_players=4, visual_game = True):
+        # PyGame
+        if visual_game:
+            # Set Up Pygame
+            p.init()
+            self.font = p.font.SysFont('arial', 25)
+            self.height = HEIGHT
+            self.width = WIDTH
+            self.display = p.display.set_mode((self.width, self.height))
+            p.display.set_caption('Monopoly')
+            self.clock = p.time.Clock()
         # General
-        self.board = init_game_board(np.zeros(number_of_players, dtype="int"))
+        self.number_of_players = number_of_players
+        self.board = init_game_board(np.zeros(self.number_of_players, dtype="int"), self.number_of_players)
         self.player_turn = 1
-        self.bankrupt_players = np.zeros(number_of_players, dtype="bool")
+        self.player_position = 0
+        self.bankrupt_players = np.zeros(self.number_of_players, dtype="bool")
         # Houses
         self.number_of_available_houses = 32
         self.number_of_available_hotels = 12
@@ -266,5 +328,163 @@ class GameState:
         # Player Details
         self.player_money = np.ones(number_of_players, dtype="int") * 1500
         self.number_of_turns_in_jail = np.zeros(number_of_players, dtype="int")
-        self.free_jail = np.zeros(number_of_players, dtype="int")
+        self.free_jail = np.zeros((2, self.number_of_players), dtype="int")  # row represents chance or community
         self.owned_property = init_property()
+        self.doubles_rolled = 0
+        self.current_roll = roll_dice()
+
+    def update_ui(self):
+        self.display.fill("white")
+        board_image = draw_gameboard(os.path.join('assets', "board.png"))
+        self.display.blit(board_image.image, board_image.rect)
+
+        # Draw Current Roll
+        text = self.font.render(f"Player {self.player_turn} rolled {self.current_roll}", True, (0, 0, 0))
+        self.display.blit(text, [550, self.height / 2])
+
+        # Draw Players
+        for player in range(self.number_of_players):
+            position = player_pos_px(np.where(self.board[:, player] == 1)[0][0])
+            p.draw.rect(self.display, PLAYER_COLOR[player], p.Rect(position[0] + player, position[1] + player, PLAYER_SIZE, PLAYER_SIZE))
+
+        # Debugging
+        text = self.font.render(f"Player 1 is at board position {self.player_position}", True, (0, 0, 0))
+        self.display.blit(text, [550, self.height / 4])
+
+        # TODO: Draw Owned Properties
+        # TODO: Draw Houses
+
+    def roll_dice(self):
+        self.current_roll = roll_dice()
+        if self.current_roll[0] == self.current_roll[1]:
+            self.doubles_rolled += 1
+        else:
+            self.doubles_rolled = 0
+
+    def move_player(self, player):
+        previous_location = np.where(self.board[:, player] == 1)[0][0]
+        new_location = (previous_location + sum(self.current_roll)) % 40
+        self.board[previous_location, player] = 0  # Remove Old Position
+        self.board[new_location, player] = 1
+        self.player_position = new_location
+
+    def collect_go(self, player):
+        self.player_money[player] += 200
+
+    def pay_rent(self, player_to_pay, player_to_earn, number_of_houses, property_tuple):
+        self.player_money[player_to_earn] += rent(property_tuple, number_of_houses, sum(self.current_roll))
+        self.player_money[player_to_pay] -= rent(property_tuple, number_of_houses, sum(self.current_roll))
+
+    def buy_property(self, player, property_tuple):
+        self.player_money[player] -= cost_property(property_tuple)
+        self.owned_property[property_tuple[0]][
+            property_tuple[1] - 1] = player + 1  # adjust so player goes starts from 1
+
+    def resolve_chance_card(self, key, player):
+
+        previous_player_position = self.player_position
+
+        if key == 0:  # Advance to go
+            self.board[previous_player_position, player] = 0  # Remove Old Position
+            self.board[0, player] = 1
+        elif key == 1:  # Advance to Red3
+            self.board[previous_player_position, player] = 0
+            self.board[24, player] = 1
+        elif key == 2:  # Advance to Purple1
+            self.board[previous_player_position, player] = 0
+            self.board[11, player] = 1
+        elif key == 3:  # Advance to Nearest Utility
+            self.board[previous_player_position, player] = 0
+            # Can only be in one of 3 places
+            if previous_player_position == 7:
+                self.board[12, player] == 1
+            elif previous_player_position == 22:
+                self.board[28, player]
+            elif previous_player_position == 36:
+                self.board[12, player] == 1
+        elif key == 4:  # Advance to nearest rail
+            self.board[previous_player_position, player] = 0
+            # Can only be in one of 3 places
+            if previous_player_position == 7:
+                self.board[15, player] == 1
+            elif previous_player_position == 22:
+                self.board[25, player]
+            elif previous_player_position == 36:
+                self.board[5, player] == 1
+        elif key == 5:  # Collect 50
+            self.player_money[player] += 50
+        elif key == 6:  # Get Out of Jail Free
+            self.free_jail[0, player] += 1
+        elif key == 7:  # Go Back 3:
+            self.board[previous_player_position, player] = 0
+            # Can only be in one of 3 places
+            if previous_player_position == 7:
+                self.board[4, player] == 1
+            elif previous_player_position == 22:
+                self.board[19, player]
+            elif previous_player_position == 36:
+                self.board[33, player] == 1
+        elif key == 8:  # Go To Jail
+            self.board[previous_player_position, player] = 0
+            # Checks for jail happens outside this function
+            self.board[30, player] = 1
+        elif key == 9:  # Property Repairs
+            None
+        elif key == 10:  # Pay 15
+            self.player_money[player] -= 15
+        elif key == 11:  # Advance to Rail1
+            self.board[previous_player_position, player] = 0
+            self.board[5, player] = 1
+        elif key == 12:  # Advance to Mayfair
+            self.board[previous_player_position, player] = 0
+            self.board[39, player] = 1
+        elif key == 13:  # Pay Each Player 50
+            self.player_money[player] -= sum(self.bankrupt_players) * 50
+            for id in range(self.number_of_players):
+                if self.bankrupt_players[id] == 0:
+                    self.player_money[id] += 50
+        elif key == 14:  # Collect 150
+            self.player_money[player] += 150
+
+    def resolve_community_card(self, key, player):
+
+        previous_player_position = self.player_position
+
+        if key == 0:  # Advance to go
+            self.board[previous_player_position, player] = 0  # Remove Old Position
+            self.board[0, player] = 1
+        elif key == 1:  # Collect 200
+            self.player_money[player] += 200
+        elif key == 2:  # Pay 50
+            self.player_money[player] -= 50
+        elif key == 3:  # Collect 50
+            self.player_money[player] += 50
+        elif key == 4:  # Get Out of Jail Free
+            self.free_jail[1, player] += 1
+        elif key == 5:  # Go To Jail
+            self.board[previous_player_position, player] = 0
+            # Checks for jail happens outside this function
+            self.board[30, player] = 1
+        elif key == 6:  # Collect 50 From Each Player
+            self.player_money[player] += sum(self.bankrupt_players) * 50
+            for id in range(self.number_of_players):
+                if self.bankrupt_players[id] == 0:
+                    self.player_money[id] -= 50
+        elif key == 7:  # Collect 100
+            self.player_money[player] += 100
+        elif key == 8:  # Collect 20
+            self.player_money[player] += 20
+        elif key == 9:  # Collect 100
+            self.player_money[player] += 100
+        elif key == 10:  # Pay 100
+            self.player_money[player] -= 100
+        elif key == 11:  # Pay 150
+            self.player_money[player] -= 150
+        elif key == 12:  # Collect 25
+            self.player_money[player] += 25
+        elif key == 13:  # Property Repairs
+            None
+        elif key == 14:  # Collect 10
+            self.player_money[player] += 10
+        elif key == 15:
+            self.player_money[player] += 100
