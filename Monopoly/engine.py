@@ -282,9 +282,8 @@ class GameState:
             self.clock = p.time.Clock()
         # General
         self.number_of_players = number_of_players
-        self.board = init_game_board(np.zeros(self.number_of_players, dtype="int"), self.number_of_players)
-        self.player_turn = 1
-        self.player_position = 0
+        self.player_turn = 0
+        self.player_position = np.zeros(self.number_of_players, dtype="int")
         self.bankrupt_players = np.zeros(self.number_of_players, dtype="bool")
         # Houses
         self.number_of_available_houses = 32
@@ -344,12 +343,18 @@ class GameState:
 
         # Draw Players
         for player in range(self.number_of_players):
-            position = player_pos_px(np.where(self.board[:, player] == 1)[0][0])
+            position = player_pos_px(self.player_position[player])
             p.draw.rect(self.display, PLAYER_COLOR[player], p.Rect(position[0] + player, position[1] + player, PLAYER_SIZE, PLAYER_SIZE))
 
         # Debugging
-        text = self.font.render(f"Player 1 is at board position {self.player_position}", True, (0, 0, 0))
-        self.display.blit(text, [550, self.height / 4])
+        text = self.font.render(f"Player 0: $ {self.player_money[0]}", True, (0, 0, 0))
+        self.display.blit(text, [550, 100])
+        text = self.font.render(f"Player 1: $ {self.player_money[1]}", True, (0, 0, 0))
+        self.display.blit(text, [850, 100])
+        text = self.font.render(f"Player 2: $ {self.player_money[2]}", True, (0, 0, 0))
+        self.display.blit(text, [550, 150])
+        text = self.font.render(f"Player 3: $ {self.player_money[3]}", True, (0, 0, 0))
+        self.display.blit(text, [850, 150])
 
         # TODO: Draw Owned Properties
         # TODO: Draw Houses
@@ -362,11 +367,13 @@ class GameState:
             self.doubles_rolled = 0
 
     def move_player(self, player):
-        previous_location = np.where(self.board[:, player] == 1)[0][0]
+        previous_location = self.player_position[player]
         new_location = (previous_location + sum(self.current_roll)) % 40
-        self.board[previous_location, player] = 0  # Remove Old Position
-        self.board[new_location, player] = 1
-        self.player_position = new_location
+        self.player_position[player] = new_location
+
+    def go_to_jail(self, player):
+        self.player_position[player] = 10
+        self.number_of_turns_in_jail[player] += 1
 
     def collect_go(self, player):
         self.player_money[player] += 200
@@ -377,67 +384,54 @@ class GameState:
 
     def buy_property(self, player, property_tuple):
         self.player_money[player] -= cost_property(property_tuple)
-        self.owned_property[property_tuple[0]][
-            property_tuple[1] - 1] = player + 1  # adjust so player goes starts from 1
+        self.owned_property[property_tuple[0]][property_tuple[1] - 1] = player + 1 #need to scale to players 1 - 4 as 0 represents no ownership
 
     def resolve_chance_card(self, key, player):
 
-        previous_player_position = self.player_position
-
         if key == 0:  # Advance to go
-            self.board[previous_player_position, player] = 0  # Remove Old Position
-            self.board[0, player] = 1
+            self.player_position[player] = 0
         elif key == 1:  # Advance to Red3
-            self.board[previous_player_position, player] = 0
-            self.board[24, player] = 1
+            self.player_position[player] = 24
         elif key == 2:  # Advance to Purple1
-            self.board[previous_player_position, player] = 0
-            self.board[11, player] = 1
+            self.player_position[player] = 11
         elif key == 3:  # Advance to Nearest Utility
-            self.board[previous_player_position, player] = 0
             # Can only be in one of 3 places
-            if previous_player_position == 7:
-                self.board[12, player] == 1
-            elif previous_player_position == 22:
-                self.board[28, player]
-            elif previous_player_position == 36:
-                self.board[12, player] == 1
+            if self.player_position[player] == 7:
+                self.player_position[player] = 12
+            elif self.player_position[player] == 22:
+                self.player_position[player] = 28
+            elif self.player_position[player] == 36:
+                self.player_position[player] = 12
         elif key == 4:  # Advance to nearest rail
-            self.board[previous_player_position, player] = 0
             # Can only be in one of 3 places
-            if previous_player_position == 7:
-                self.board[15, player] == 1
-            elif previous_player_position == 22:
-                self.board[25, player]
-            elif previous_player_position == 36:
-                self.board[5, player] == 1
+            if self.player_position[player] == 7:
+                self.player_position[player] = 15
+            elif self.player_position[player] == 22:
+                self.player_position[player] = 25
+            elif self.player_position[player] == 36:
+                self.player_position[player] = 5
         elif key == 5:  # Collect 50
             self.player_money[player] += 50
         elif key == 6:  # Get Out of Jail Free
             self.free_jail[0, player] += 1
         elif key == 7:  # Go Back 3:
-            self.board[previous_player_position, player] = 0
             # Can only be in one of 3 places
-            if previous_player_position == 7:
-                self.board[4, player] == 1
-            elif previous_player_position == 22:
-                self.board[19, player]
-            elif previous_player_position == 36:
-                self.board[33, player] == 1
+            if self.player_position[player] == 7:
+                self.player_position[player] = 4
+            elif self.player_position[player] == 22:
+                self.player_position[player] = 19
+            elif self.player_position[player] == 36:
+                self.player_position[player] = 33
         elif key == 8:  # Go To Jail
-            self.board[previous_player_position, player] = 0
-            # Checks for jail happens outside this function
-            self.board[30, player] = 1
+            self.player_position[player] = 30
         elif key == 9:  # Property Repairs
             None
         elif key == 10:  # Pay 15
             self.player_money[player] -= 15
         elif key == 11:  # Advance to Rail1
-            self.board[previous_player_position, player] = 0
-            self.board[5, player] = 1
+            self.player_position[player] = 5
         elif key == 12:  # Advance to Mayfair
-            self.board[previous_player_position, player] = 0
-            self.board[39, player] = 1
+            self.player_position[player] = 39
         elif key == 13:  # Pay Each Player 50
             self.player_money[player] -= sum(self.bankrupt_players) * 50
             for id in range(self.number_of_players):
@@ -448,11 +442,10 @@ class GameState:
 
     def resolve_community_card(self, key, player):
 
-        previous_player_position = self.player_position
+        previous_player_position = self.player_position[player]
 
         if key == 0:  # Advance to go
-            self.board[previous_player_position, player] = 0  # Remove Old Position
-            self.board[0, player] = 1
+            self.player_position[player] = 0
         elif key == 1:  # Collect 200
             self.player_money[player] += 200
         elif key == 2:  # Pay 50
@@ -462,9 +455,7 @@ class GameState:
         elif key == 4:  # Get Out of Jail Free
             self.free_jail[1, player] += 1
         elif key == 5:  # Go To Jail
-            self.board[previous_player_position, player] = 0
-            # Checks for jail happens outside this function
-            self.board[30, player] = 1
+            self.player_position[player] = 30
         elif key == 6:  # Collect 50 From Each Player
             self.player_money[player] += sum(self.bankrupt_players) * 50
             for id in range(self.number_of_players):
