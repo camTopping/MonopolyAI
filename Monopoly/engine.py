@@ -322,8 +322,6 @@ class GameState:
                                 13: "Property Repairs",
                                 14: "Collect 10",
                                 15: "Collect 100"}
-        self.used_chance_cards = {}
-        self.used_community_cards = {}
         # Player Details
         self.player_money = np.ones(number_of_players, dtype="int") * 1500
         self.number_of_turns_in_jail = np.zeros(number_of_players, dtype="int")
@@ -358,6 +356,14 @@ class GameState:
 
         # TODO: Draw Owned Properties
         # TODO: Draw Houses
+    def draw_card_event(self, chance, community, card_number):
+        if chance:
+            text = self.font.render(f"Player {self.player_turn}: {self.chance_cards[card_number]}", True, (0, 0, 0))
+        elif community:
+            text = self.font.render(f"Player {self.player_turn}: {self.community_cards[card_number]}", True, (0, 0, 0))
+        else:
+            text = None
+        self.display.blit(text, [580, 50])
 
     def roll_dice(self):
         self.current_roll = roll_dice()
@@ -370,6 +376,28 @@ class GameState:
         previous_location = self.player_position[player]
         new_location = (previous_location + sum(self.current_roll)) % 40
         self.player_position[player] = new_location
+
+    def get_next_player(self):
+        next_player = (self.player_turn + 1) % self.number_of_players
+        available_players = [ind for ind, value in enumerate(self.bankrupt_players) if value == 0]
+        while next_player not in available_players:
+            next_player = (next_player + 1) % self.number_of_players
+        self.player_turn = next_player
+
+    def check_bankrupt(self):
+        # Check For Bankrupt Players
+        available_players = [ind for ind, value in enumerate(self.bankrupt_players) if value == 0]
+        for player in available_players:
+            if self.player_money[player] < 0:
+                # TODO: Determine Who Made Player Bankrupt and hand properties over
+                # Remove all property
+                for color in self.owned_property:
+                    bankrupt_properties = np.where(self.owned_property[color] == player + 1)
+                    self.owned_property[color][bankrupt_properties] = 0
+
+                # Declare Bankrupt and Remove Properties
+                print(f"Player {player} is bankrupt!")
+                self.bankrupt_players[player] = 1
 
     def go_to_jail(self, player):
         self.player_position[player] = 10
@@ -433,10 +461,10 @@ class GameState:
         elif key == 12:  # Advance to Mayfair
             self.player_position[player] = 39
         elif key == 13:  # Pay Each Player 50
-            self.player_money[player] -= sum(self.bankrupt_players) * 50
-            for id in range(self.number_of_players):
-                if self.bankrupt_players[id] == 0:
-                    self.player_money[id] += 50
+            available_players = [ind for ind, value in enumerate(self.bankrupt_players) if value == 0]
+            self.player_money[player] -= len(available_players) * 50
+            for i in available_players:
+                self.player_money[i] += 50
         elif key == 14:  # Collect 150
             self.player_money[player] += 150
 
@@ -457,10 +485,10 @@ class GameState:
         elif key == 5:  # Go To Jail
             self.player_position[player] = 30
         elif key == 6:  # Collect 50 From Each Player
-            self.player_money[player] += sum(self.bankrupt_players) * 50
-            for id in range(self.number_of_players):
-                if self.bankrupt_players[id] == 0:
-                    self.player_money[id] -= 50
+            available_players = [ind for ind, value in enumerate(self.bankrupt_players) if value == 0]
+            self.player_money[player] += len(available_players) * 50
+            for i in available_players:
+                self.player_money[i] -= 50
         elif key == 7:  # Collect 100
             self.player_money[player] += 100
         elif key == 8:  # Collect 20

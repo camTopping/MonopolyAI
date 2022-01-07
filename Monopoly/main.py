@@ -23,42 +23,111 @@ def run_pygame(number_of_players=4):
         event = p.event.wait()
         if event.type == p.QUIT:
             p.quit()
-            # Plot Results
-            print(helpers.plot_metrics(plot_player_money, number_of_players))
             quit()
             break
         elif event.type == p.KEYDOWN:
             # Gameplay Loop
             player_turn = game_state.player_turn
-            # 2. Player rolls dice.
-            game_state.roll_dice()
-            # 2a. If player is in jail, ask if they want to pay 50 dollars to get out, roll for a double, or get out of jail free w/ card
-            # 2b. If on the 3rd roll, player does not roll a double, force 50 dollar fee and proceed.
-            # 3. Move player number of spaces determined by dice
-            previous_position = game_state.player_position[player_turn]
-            game_state.move_player(player_turn)
+
+            if game_state.number_of_turns_in_jail[player_turn] > 0:
+                print(f"Player {player_turn}: Handling Jail Case ")
+                # TODO: User input
+                # 2a. If player is in jail, ask if they want to pay 50 dollars to get out, roll for a double, or get out of jail free w/ card
+                # 2b. If on the 3rd roll, player does not roll a double, force 50 dollar fee and proceed.
+                if game_state.free_jail[0, player_turn] == 1:
+                    print("Get out of Jail Free")
+                    # Use get out of jail free card and place back into cards
+                    game_state.free_jail[0, player_turn] == 1
+                    # TODO: Put card back into pile
+                    game_state.number_of_turns_in_jail[player_turn] == 0
+
+                    game_state.roll_dice()
+                    previous_position = game_state.player_position[player_turn]
+                    game_state.number_of_turns_in_jail[player_turn] == 0
+                    game_state.move_player(player_turn)
+                elif game_state.free_jail[1, player_turn] == 1:
+                    print("Get out of Jail Free")
+                    # Use get out of jail free card and place back into cards
+                    game_state.free_jail[1, player_turn] == 1
+                    # TODO: Put card back into pile
+                    game_state.number_of_turns_in_jail[player_turn] == 0
+
+                    game_state.roll_dice()
+                    previous_position = game_state.player_position[player_turn]
+                    game_state.number_of_turns_in_jail[player_turn] == 0
+                    game_state.move_player(player_turn)
+                else:
+                    game_state.roll_dice()
+                    game_state.update_ui()
+                    if game_state.doubles_rolled > 0:
+                        print("Rolled Double, goes free.")
+                        # Player goes free
+                        previous_position = game_state.player_position[player_turn]
+                        game_state.number_of_turns_in_jail[player_turn] == 0
+                        game_state.move_player(player_turn)
+                    elif game_state.number_of_turns_in_jail[player_turn] == 3:
+                        print("3 Turns in Jail and no double, pay 50.")
+                        # Play pays 50 and moves
+                        game_state.player_money[player_turn] -= 50
+                        previous_position = game_state.player_position[player_turn]
+                        game_state.number_of_turns_in_jail[player_turn] == 0
+                        game_state.move_player(player_turn)
+                    else:
+                        game_state.number_of_turns_in_jail[player_turn] += 1
+                        game_state.get_next_player()
+                        print(f"No Double, end turn. NoT: {game_state.number_of_turns_in_jail[player_turn]}")
+                        continue
+            else:
+                # 2. Player rolls dice.
+                game_state.roll_dice()
+
+                # 3. Move player number of spaces determined by dice
+                previous_position = game_state.player_position[player_turn]
+                game_state.move_player(player_turn)
 
             # 4. If player lands on chance or community chest, resolve card and proceed.
             current_tile = engine.map_position(game_state.player_position[player_turn])
+            # TODO: Refresh pile if pile is empty
             if type(current_tile) != tuple:
-                # TODO: Sample chance/community card from available cards and remove from deck until all have been shown.
                 if current_tile == "Chance":
-                    game_state.resolve_chance_card(0, player_turn)
-                elif current_tile == "Community":
-                    game_state.resolve_community_card(0, player_turn)
+                    available_cards = list(game_state.chance_cards.keys())
+                    drawn_card = random.sample(available_cards, 1)[0]
+                    game_state.resolve_chance_card(drawn_card, player_turn)
+                    # Show Card Event
+                    show_chance_event = True
 
+                elif current_tile == "Community":
+                    available_cards = list(game_state.community_cards.keys())
+                    drawn_card = random.sample(available_cards, 1)[0]
+                    game_state.resolve_community_card(drawn_card, player_turn)
+                    # Show Card Event
+                    show_community_event = True
+                else:
+                    show_chance_event = False
+                    show_community_event = False
+            else:
+                show_chance_event = False
+                show_community_event = False
+
+            current_tile = engine.map_position(game_state.player_position[player_turn])
             # 5. If player lands on jail, go directly to jail and end turn.
             if current_tile == "Go To Jail":
                 game_state.go_to_jail(player_turn)
+                game_state.get_next_player()
+                continue
+
+            # force update on current tile in case player move
+            current_tile = engine.map_position(game_state.player_position[player_turn])
 
             new_position = game_state.player_position[player_turn]
 
             # 6. If player passes go, collects 200
             # Going to Jail does not count as passing go
-            if new_position < previous_position and game_state.number_of_turns_in_jail[player_turn] == 0:
+            if new_position < previous_position or (previous_position == new_position == 0):
                 # TODO: Ignore this when chance/community card is move back 3 spaces
                 game_state.collect_go(player_turn)
 
+            # TODO: User based decision - no longer force
             # 7. If property is owned by another player, force player to pay.
             # 7a. Allow user to trade/mortgage/sell houses/etc. in order to pay the costs
             # 8. If space unowned, player can either
@@ -81,38 +150,40 @@ def run_pygame(number_of_players=4):
                     # Plot Information
                     plot_player_money = np.vstack([plot_player_money, game_state.player_money])
             # 8b. Put property up for bidding (player can still place bets on this bidding)
+            # TODO: Create bidding system
 
             # 9. Allow player to build houses/trade/sell/mortgage or end turn.
+            # TODO: Create house building system
+            # TODO: Create trading system
+            # TODO: Create mortgage system
 
             # Update UI
             game_state.update_ui()
+            if show_chance_event:
+                game_state.draw_card_event(True, False, drawn_card)
+                # Remove Card From Deck
+                game_state.chance_cards.pop(drawn_card)
+            elif show_community_event:
+                game_state.draw_card_event(False, True, drawn_card)
+                # Remove Card From Deck
+                game_state.community_cards.pop(drawn_card)
             game_state.clock.tick(FPS)
             p.display.flip()
 
             # 10. Repeat until all but one player is bankrupt or max number of turns has been reached (tie.)
             # Check For Bankrupt Players
-            available_players = [ind for ind, value in enumerate(game_state.bankrupt_players) if value == 0]
-            for player in available_players:
-                if game_state.player_money[player] < 0:
-                    # TODO: Determine Who Made Player Bankrupt and hand properties over
-                    # Remove all property
-                    for color in game_state.owned_property:
-                        bankrupt_properties = np.where(game_state.owned_property[color] == player + 1)
-                        game_state.owned_property[color][bankrupt_properties] = 0
-
-                    # Declare Bankrupt and Remove Properties
-                    print(f"Player {player} is bankrupt!")
-                    game_state.bankrupt_players[player] = 1
+            game_state.check_bankrupt()
 
             # 11. Proceed to next players turn if not double
-            if game_state.doubles_rolled == 0 or game_state.bankrupt_players[player_turn] == 1:
-                next_player = (game_state.player_turn + 1) % number_of_players
-                while next_player not in available_players:
-                    print(f"Failed {next_player}, trying {(next_player + 1) % number_of_players}")
-                    next_player = (next_player + 1) % number_of_players
-                game_state.player_turn = next_player
-            else:
+            if game_state.doubles_rolled == 0 or game_state.bankrupt_players[player_turn]:
+                game_state.get_next_player()
+            elif game_state.doubles_rolled < 3:
                 print(f"Double Rolled")
+            else:
+                print("Speeding, go to jail")
+                game_state.go_to_jail(player_turn)
+                game_state.get_next_player()
+
 
     print(helpers.plot_metrics(plot_player_money, number_of_players))
 
