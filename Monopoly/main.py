@@ -13,6 +13,7 @@ IMAGES = {}  # TODO: Load all images outside of gameloop for efficiency
 def run_pygame(number_of_players=4):
     # 1. Initialise the board game and determine who goes first
     game_state = engine.GameState()
+
     # Here we will assume that Player 1 always goes first for testing purposes.
     # game_state.player_turn = random.sample(range(1, number_of_players + 1)) # First Player
 
@@ -37,70 +38,69 @@ def run_pygame(number_of_players=4):
                 if game_state.free_jail[0, player_turn] == 1:
                     print("Get out of Jail Free")
                     # Use get out of jail free card and place back into cards
-                    game_state.free_jail[0, player_turn] == 1
-                    # TODO: Put card back into pile
-                    game_state.number_of_turns_in_jail[player_turn] == 0
+                    game_state.free_jail[0, player_turn] = 0
+                    # Put card back in pile
+                    game_state.chance_cards[4] = "Get Out of Jail Free"
+                    game_state.chance_draw_order.insert(game_state.chance_card_number - 1, 4)
 
                     game_state.roll_dice()
-                    previous_position = game_state.player_position[player_turn]
-                    game_state.number_of_turns_in_jail[player_turn] == 0
+                    game_state.number_of_turns_in_jail[player_turn] = 0
                     game_state.move_player(player_turn)
                 elif game_state.free_jail[1, player_turn] == 1:
                     print("Get out of Jail Free")
                     # Use get out of jail free card and place back into cards
-                    game_state.free_jail[1, player_turn] == 1
-                    # TODO: Put card back into pile
-                    game_state.number_of_turns_in_jail[player_turn] == 0
+                    game_state.free_jail[1, player_turn] = 0
+                    # Put card back in pile
+                    game_state.community_cards[6] = "Get Out of Jail Free"
+                    game_state.community_draw_order.insert(game_state.community_card_number - 1, 6)
 
                     game_state.roll_dice()
-                    previous_position = game_state.player_position[player_turn]
-                    game_state.number_of_turns_in_jail[player_turn] == 0
+                    game_state.number_of_turns_in_jail[player_turn] = 0
                     game_state.move_player(player_turn)
                 else:
                     game_state.roll_dice()
-                    game_state.update_ui()
                     if game_state.doubles_rolled > 0:
                         print("Rolled Double, goes free.")
                         # Player goes free
-                        previous_position = game_state.player_position[player_turn]
-                        game_state.number_of_turns_in_jail[player_turn] == 0
+                        game_state.number_of_turns_in_jail[player_turn] = 0
                         game_state.move_player(player_turn)
                     elif game_state.number_of_turns_in_jail[player_turn] == 3:
                         print("3 Turns in Jail and no double, pay 50.")
                         # Play pays 50 and moves
                         game_state.player_money[player_turn] -= 50
-                        previous_position = game_state.player_position[player_turn]
-                        game_state.number_of_turns_in_jail[player_turn] == 0
+                        game_state.number_of_turns_in_jail[player_turn] = 0
                         game_state.move_player(player_turn)
                     else:
-                        game_state.number_of_turns_in_jail[player_turn] += 1
-                        game_state.get_next_player()
                         print(f"No Double, end turn. NoT: {game_state.number_of_turns_in_jail[player_turn]}")
+                        game_state.number_of_turns_in_jail[player_turn] += 1
+
+                        game_state.update_ui()
+                        game_state.clock.tick(FPS)
+                        p.display.flip()
+
+                        game_state.get_next_player()
                         continue
             else:
                 # 2. Player rolls dice.
                 game_state.roll_dice()
 
                 # 3. Move player number of spaces determined by dice
-                previous_position = game_state.player_position[player_turn]
                 game_state.move_player(player_turn)
 
             # 4. If player lands on chance or community chest, resolve card and proceed.
             current_tile = engine.map_position(game_state.player_position[player_turn])
-            # TODO: Refresh pile if pile is empty
             if type(current_tile) != tuple:
                 if current_tile == "Chance":
-                    available_cards = list(game_state.chance_cards.keys())
-                    drawn_card = random.sample(available_cards, 1)[0]
-                    game_state.resolve_chance_card(drawn_card, player_turn)
+                    drawn_card = game_state.chance_card_number
+                    game_state.resolve_chance_card(player_turn)
                     # Show Card Event
                     show_chance_event = True
-
+                    show_community_event = False
                 elif current_tile == "Community":
-                    available_cards = list(game_state.community_cards.keys())
-                    drawn_card = random.sample(available_cards, 1)[0]
-                    game_state.resolve_community_card(drawn_card, player_turn)
+                    drawn_card = game_state.community_card_number
+                    game_state.resolve_community_card(player_turn)
                     # Show Card Event
+                    show_chance_event = False
                     show_community_event = True
                 else:
                     show_chance_event = False
@@ -113,18 +113,20 @@ def run_pygame(number_of_players=4):
             # 5. If player lands on jail, go directly to jail and end turn.
             if current_tile == "Go To Jail":
                 game_state.go_to_jail(player_turn)
+
+                game_state.update_ui()
+                game_state.clock.tick(FPS)
+                p.display.flip()
+
                 game_state.get_next_player()
                 continue
 
             # force update on current tile in case player move
             current_tile = engine.map_position(game_state.player_position[player_turn])
 
-            new_position = game_state.player_position[player_turn]
-
             # 6. If player passes go, collects 200
             # Going to Jail does not count as passing go
-            if new_position < previous_position or (previous_position == new_position == 0):
-                # TODO: Ignore this when chance/community card is move back 3 spaces
+            if game_state.player_position[player_turn] < game_state.previous_player_position[player_turn]:
                 game_state.collect_go(player_turn)
 
             # TODO: User based decision - no longer force
@@ -145,7 +147,7 @@ def run_pygame(number_of_players=4):
                     # If owned, pay up to relevant player.
                     print(
                         f"Player {player_turn} is paying player {property_ownership - 1} for landing on {engine.map_position(game_state.player_position[player_turn])}")
-                    game_state.pay_rent(player_turn, property_ownership - 1, 5, current_tile)
+                    game_state.pay_rent(player_turn, property_ownership - 1, 0, current_tile)
 
                     # Plot Information
                     plot_player_money = np.vstack([plot_player_money, game_state.player_money])
@@ -160,13 +162,9 @@ def run_pygame(number_of_players=4):
             # Update UI
             game_state.update_ui()
             if show_chance_event:
-                game_state.draw_card_event(True, False, drawn_card)
-                # Remove Card From Deck
-                game_state.chance_cards.pop(drawn_card)
+                game_state.draw_card_event(True, False, game_state.chance_draw_order[drawn_card])
             elif show_community_event:
-                game_state.draw_card_event(False, True, drawn_card)
-                # Remove Card From Deck
-                game_state.community_cards.pop(drawn_card)
+                game_state.draw_card_event(False, True, game_state.community_draw_order[drawn_card])
             game_state.clock.tick(FPS)
             p.display.flip()
 
@@ -181,6 +179,7 @@ def run_pygame(number_of_players=4):
                 print(f"Double Rolled")
             else:
                 print("Speeding, go to jail")
+                game_state.doubles_rolled = 0
                 game_state.go_to_jail(player_turn)
                 game_state.get_next_player()
 
